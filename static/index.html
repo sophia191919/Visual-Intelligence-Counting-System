@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>视觉智能计数系统 · 物体鉴别</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8;
+    --border:#334155; --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--text); min-height:100vh;
+  }
+  header{
+    display:flex; align-items:center; gap:12px; padding:14px 20px;
+    background:var(--panel); border-bottom:1px solid var(--border);
+    flex-wrap:wrap;
+  }
+  header h1{font-size:18px; margin:0; font-weight:600;}
+  header .sub{color:var(--muted); font-size:13px;}
+  .badge{
+    margin-left:auto; font-size:12px; padding:4px 10px; border-radius:999px;
+    background:#0c4a6e; color:#7dd3fc; border:1px solid #075985;
+  }
+  .layout{display:flex; gap:16px; padding:16px; align-items:flex-start;}
+  .sidebar{flex:0 0 320px; display:flex; flex-direction:column; gap:14px;}
+  .content{flex:1; min-width:0; display:flex; flex-direction:column; gap:14px;}
+
+  .card{background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:16px;}
+
+  /* 上传区 */
+  #dropzone{
+    border:2px dashed var(--border); border-radius:12px; padding:26px 16px;
+    text-align:center; cursor:pointer; transition:.15s; color:var(--muted);
+  }
+  #dropzone:hover,#dropzone.drag{border-color:var(--accent); color:var(--text); background:#0c4a6e22;}
+  #dropzone .big{font-size:30px; line-height:1;}
+  #dropzone p{margin:8px 0 2px; font-size:14px;}
+
+  .actions{display:flex; gap:8px; flex-wrap:wrap;}
+  button{
+    border:none; border-radius:8px; padding:9px 14px; cursor:pointer;
+    font-size:14px; background:#334155; color:var(--text); white-space:nowrap;
+  }
+  button:hover{filter:brightness(1.1);}
+  button.primary{background:var(--accent); color:#06283d; font-weight:600;}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+
+  /* 缩略图列表 */
+  #gallery{display:grid; grid-template-columns:repeat(auto-fill,minmax(86px,1fr)); gap:8px; max-height:40vh; overflow:auto;}
+  .thumb{position:relative; border:1px solid var(--border); border-radius:8px; overflow:hidden; cursor:pointer; background:var(--panel2);}
+  .thumb img{width:100%; height:64px; object-fit:cover; display:block;}
+  .thumb .name{font-size:10px; padding:3px 4px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .thumb .count{
+    position:absolute; top:2px; right:2px; background:var(--red); color:#fff;
+    font-size:11px; border-radius:999px; padding:1px 6px; font-weight:700;
+  }
+  .thumb.active{border-color:var(--accent); box-shadow:0 0 0 2px #38bdf855;}
+
+  /* 状态条 */
+  #status{font-size:13px; min-height:20px;}
+  #status.info{color:var(--muted);}
+  #status.loading{color:var(--accent);}
+  #status.success{color:var(--green);}
+  #status.error{color:var(--red);}
+  .spinner{
+    display:inline-block; width:14px; height:14px; border:2px solid currentColor;
+    border-top-color:transparent; border-radius:50%; animation:spin .8s linear infinite;
+    vertical-align:-2px; margin-right:6px;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* 查看器 */
+  .viewer-head{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;}
+  .viewer-head .fname{font-weight:600; font-size:14px; word-break:break-all;}
+  .viewer-head .total{color:var(--muted); font-size:13px;}
+  #stage{
+    position:relative; overflow:hidden; border-radius:10px; background:#020617;
+    min-height:260px; user-select:none; touch-action:none;
+  }
+  #viewport{position:relative; transform-origin:0 0; cursor:grab;}
+  #viewport.drag{cursor:grabbing;}
+  #viewport img{display:block; width:100%; height:auto;}
+  .box{position:absolute; border:2px solid var(--green); box-sizing:border-box;}
+  .tag{
+    position:absolute; left:-2px; top:-20px; font-size:11px; line-height:1;
+    padding:2px 5px; color:#fff; background:var(--green); border-radius:3px;
+    white-space:nowrap; pointer-events:none;
+  }
+  #placeholder{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    color:var(--muted); font-size:14px;
+  }
+
+  .toolbar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px;}
+  .toolbar button{padding:6px 10px; font-size:13px;}
+  .zoom-ind{color:var(--muted); font-size:13px; margin-left:auto;}
+
+  /* 结果统计表 */
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th,td{padding:8px 10px; text-align:left; border-bottom:1px solid var(--border);}
+  th{color:var(--muted); font-weight:500;}
+  .dot{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:8px; vertical-align:-1px;}
+
+  @media (max-width:860px){
+    .layout{flex-direction:column;}
+    .sidebar{flex:1 1 auto; width:100%;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>视觉智能计数系统</h1>
+  <span class="sub">图像上传 · 物体鉴别 · 计数</span>
+  <span class="badge" id="modelBadge">模型加载中…</span>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div class="card" id="dropzone">
+      <div class="big">📁</div>
+      <p><b>拖拽图片到此处</b> 或 <u>点击选择文件</u></p>
+      <p style="font-size:12px;">支持多选 · JPG / PNG / BMP</p>
+      <input type="file" id="fileInput" accept="image/*" multiple hidden>
+    </div>
+
+    <div class="card">
+      <div class="actions">
+        <button class="primary" id="detectBtn" disabled>开始识别</button>
+        <button id="clearBtn">清空</button>
+      </div>
+      <div class="actions" style="margin-top:8px;">
+        <button id="exportJson" disabled>导出 JSON</button>
+        <button id="exportCsv" disabled>导出 CSV</button>
+        <button id="exportTxt" disabled>导出 TXT</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:13px; color:var(--muted); margin-bottom:8px;">图片列表</div>
+      <div id="gallery"></div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="card">
+      <div id="status" class="info">请先上传图片。</div>
+    </div>
+
+    <div class="card">
+      <div class="viewer-head">
+        <span class="fname" id="viewerName">—</span>
+        <span class="total" id="viewerTotal"></span>
+      </div>
+      <div id="stage">
+        <div id="viewport"></div>
+        <div id="placeholder">上传图片后在此查看框选结果</div>
+      </div>
+      <div class="toolbar">
+        <button id="zoomIn">＋ 放大</button>
+        <button id="zoomOut">− 缩小</button>
+        <button id="zoomReset">重置</button>
+        <span class="zoom-ind" id="zoomInd">100%</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="font-size:14px; font-weight:600; margin-bottom:8px;">识别结果统计（累计）</div>
+      <div id="summary"><span style="color:var(--muted);">暂无数据</span></div>
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = (s)=>document.querySelector(s);
+
+const state = {
+  images: [],   // {name, dataUrl}
+  results: [],  // 与 images 对齐：{filename,error,total,width,height,counts,detections}
+  selected: 0,
+  zoom: 1, panX: 0, panY: 0,
+};
+
+const PALETTE = ['#22c55e','#38bdf8','#f59e0b','#a78bfa','#f472b6','#eab308','#34d399','#fb7185','#60a5fa','#f97316'];
+const colorOf = (cls)=>{
+  let h=0; for(const c of cls) h=(h*31 + c.charCodeAt(0))>>>0;
+  return PALETTE[h % PALETTE.length];
+};
+const esc = (s)=>String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+/* ---------- 状态反馈 ---------- */
+function setStatus(msg, type='info'){
+  const el = $('#status'); el.className = type; el.innerHTML = msg;
+}
+
+/* ---------- 上传：拖放 + 选择 ---------- */
+const input = $('#fileInput');
+$('#dropzone').addEventListener('click', ()=>input.click());
+input.addEventListener('change', ()=>addFiles(input.files));
+
+['dragenter','dragover'].forEach(ev=>$('#dropzone').addEventListener(ev, e=>{
+  e.preventDefault(); e.stopPropagation(); $('#dropzone').classList.add('drag');
+}));
+['dragleave','drop'].forEach(ev=>$('#dropzone').addEventListener(ev, e=>{
+  e.preventDefault(); e.stopPropagation(); $('#dropzone').classList.remove('drag');
+}));
+$('#dropzone').addEventListener('drop', e=>addFiles(e.dataTransfer.files));
+
+function addFiles(fileList){
+  const files = [...fileList].filter(f=>f.type.startsWith('image/'));
+  if(!files.length){ setStatus('未检测到图片文件。','error'); return; }
+  files.forEach(f=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      state.images.push({name:f.name, file:f, dataUrl:e.target.result});
+      renderGallery();
+      if(state.images.length === 1) selectImage(0);
+      $('#detectBtn').disabled = false;
+      setStatus(`已添加 ${state.images.length} 张图片，点击「开始识别」。`);
+    };
+    reader.readAsDataURL(f);
+  });
+}
+
+$('#clearBtn').addEventListener('click', ()=>{
+  state.images=[]; state.results=[]; state.selected=0;
+  renderGallery(); clearViewer(); clearSummary();
+  $('#detectBtn').disabled = true;
+  setExportEnabled(false);
+  setStatus('已清空。','info');
+});
+
+/* ---------- 缩略图 ---------- */
+function renderGallery(){
+  const g = $('#gallery'); g.innerHTML='';
+  state.images.forEach((img,i)=>{
+    const d = document.createElement('div');
+    d.className = 'thumb' + (i===state.selected?' active':'');
+    const count = state.results[i] && !state.results[i].error ? state.results[i].total : null;
+    d.innerHTML = `
+      <img src="${img.dataUrl}" alt="">
+      ${count===null?'':'<span class="count">'+count+'</span>'}
+      <div class="name">${esc(img.name)}</div>`;
+    d.addEventListener('click', ()=>selectImage(i));
+    g.appendChild(d);
+  });
+}
+
+/* ---------- 选择 + 查看器渲染 ---------- */
+function selectImage(i){
+  state.selected = i;
+  state.zoom=1; state.panX=0; state.panY=0; applyTransform();
+  renderViewer(); renderGallery();
+}
+
+function clearViewer(){
+  $('#viewport').innerHTML='';
+  $('#placeholder').style.display='flex';
+  $('#viewerName').textContent='—';
+  $('#viewerTotal').textContent='';
+  $('#viewport').style.width='100%';
+}
+
+function renderViewer(){
+  const img = state.images[state.selected];
+  const vp = $('#viewport'); vp.innerHTML='';
+  $('#placeholder').style.display = img ? 'none':'flex';
+  $('#viewerName').textContent = img ? img.name : '—';
+  if(!img) return;
+
+  const el = document.createElement('img'); el.src = img.dataUrl;
+  vp.appendChild(el);
+  vp.style.width='100%';
+
+  const res = state.results[state.selected];
+  const dets = res && !res.error ? (res.detections||[]) : [];
+  $('#viewerTotal').textContent = res ? (res.error ? '识别失败' : `共 ${res.total} 个物体`) : '尚未识别';
+
+  dets.forEach(d=>{
+    const [x1,y1,x2,y2] = d.box;
+    const box = document.createElement('div');
+    box.className='box';
+    box.style.left=(x1*100)+'%';
+    box.style.top=(y1*100)+'%';
+    box.style.width=((x2-x1)*100)+'%';
+    box.style.height=((y2-y1)*100)+'%';
+    const c = colorOf(d.class);
+    box.style.borderColor=c;
+    box.innerHTML = `<span class="tag" style="background:${c};">${esc(d.class)} ${Math.round(d.conf*100)}%</span>`;
+    vp.appendChild(box);
+  });
+}
+
+/* ---------- 检测 ---------- */
+$('#detectBtn').addEventListener('click', runDetect);
+
+async function runDetect(){
+  if(!state.images.length) return;
+  const fd = new FormData();
+  for(const img of state.images){
+    fd.append('files', img.file, img.name);
+  }
+  $('#detectBtn').disabled = true;
+  setStatus('<span class="spinner"></span>识别中… 0/'+state.images.length, 'loading');
+  try{
+    const resp = await fetch('/api/detect', {method:'POST', body:fd});
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    const data = await resp.json();
+    state.results = data.results;
+    $('#modelBadge').textContent = '模型: ' + (data.model||'');
+    renderGallery(); renderViewer(); renderSummary();
+    const total = state.results.reduce((s,r)=>s+(r.error?0:(r.total||0)),0);
+    const errs = state.results.filter(r=>r.error).length;
+    setStatus('识别完成：'+state.results.length+' 张图片，共 '+total+' 个物体'+(errs?'（'+errs+' 张失败）':''), 'success');
+    setExportEnabled(true);
+  }catch(e){
+    setStatus('识别失败：'+esc(e.message), 'error');
+  }finally{
+    $('#detectBtn').disabled = false;
+  }
+}
+
+/* ---------- 汇总统计 ---------- */
+function clearSummary(){ $('#summary').innerHTML='<span style="color:var(--muted);">暂无数据</span>'; }
+
+function renderSummary(){
+  const agg = {};
+  state.results.forEach(r=>{
+    if(r.error) return;
+    (r.counts||[]).forEach(c=>{ agg[c.class] = (agg[c.class]||0)+c.count; });
+  });
+  const entries = Object.entries(agg).sort((a,b)=>b[1]-a[1]);
+  if(!entries.length){ $('#summary').innerHTML='<span style="color:var(--muted);">未识别到物体</span>'; return; }
+  let html = '<table><thead><tr><th>类别</th><th>数量</th></tr></thead><tbody>';
+  entries.forEach(([k,v])=>{
+    html += `<tr><td><span class="dot" style="background:${colorOf(k)};"></span>${esc(k)}</td><td>${v}</td></tr>`;
+  });
+  const total = entries.reduce((s,e)=>s+e[1],0);
+  html += `<tr><td style="color:var(--muted);">合计</td><td style="font-weight:700;">${total}</td></tr></tbody></table>`;
+  $('#summary').innerHTML = html;
+}
+
+/* ---------- 导出 ---------- */
+function setExportEnabled(on){
+  ['#exportJson','#exportCsv','#exportTxt'].forEach(s=>$(s).disabled = !on);
+}
+function download(name, content, mime){
+  const blob = new Blob([content], {type:mime});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
+}
+$('#exportJson').addEventListener('click', ()=>download('识别结果.json', JSON.stringify({model:($('#modelBadge').textContent), results:state.results}, null, 2), 'application/json'));
+$('#exportCsv').addEventListener('click', ()=>{
+  let csv = 'filename,class,confidence,x1,y1,x2,y2\n';
+  state.results.forEach(r=>{
+    if(r.error) return;
+    (r.detections||[]).forEach(d=>{
+      csv += `"${r.filename}",${d.class},${d.conf},${d.box.join(',')}\n`;
+    });
+  });
+  download('识别明细.csv', '\ufeff'+csv, 'text/csv;charset=utf-8');
+});
+$('#exportTxt').addEventListener('click', ()=>{
+  const agg={};
+  let imgs=0;
+  state.results.forEach(r=>{ if(r.error) return; imgs++; (r.counts||[]).forEach(c=>agg[c.class]=(agg[c.class]||0)+c.count); });
+  const entries=Object.entries(agg).sort((a,b)=>b[1]-a[1]);
+  let t='视觉智能计数系统 · 识别结果汇总\n';
+  t+='模型: '+$('#modelBadge').textContent+'\n';
+  t+='共处理图片: '+imgs+' 张\n';
+  t+='共识别物体: '+entries.reduce((s,e)=>s+e[1],0)+' 个\n\n按类别统计:\n';
+  entries.forEach(([k,v])=>t+='  '+k+': '+v+'\n');
+  download('识别汇总.txt', t, 'text/plain;charset=utf-8');
+});
+
+/* ---------- 缩放 / 平移 ---------- */
+function applyTransform(){
+  $('#viewport').style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+  $('#zoomInd').textContent = Math.round(state.zoom*100)+'%';
+}
+$('#zoomIn').addEventListener('click', ()=>{ state.zoom=Math.min(8, state.zoom*1.25); applyTransform(); });
+$('#zoomOut').addEventListener('click', ()=>{ state.zoom=Math.max(0.1, state.zoom/1.25); applyTransform(); });
+$('#zoomReset').addEventListener('click', ()=>{ state.zoom=1; state.panX=0; state.panY=0; applyTransform(); });
+
+const stage = $('#stage');
+stage.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const rect = stage.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const factor = e.deltaY<0 ? 1.15 : 1/1.15;
+  const nz = Math.min(8, Math.max(0.1, state.zoom*factor));
+  state.panX = mx - (mx - state.panX)*(nz/state.zoom);
+  state.panY = my - (my - state.panY)*(nz/state.zoom);
+  state.zoom = nz; applyTransform();
+}, {passive:false});
+
+let dragging=false, sx=0, sy=0, px=0, py=0;
+stage.addEventListener('pointerdown', e=>{
+  dragging=true; sx=e.clientX; sy=e.clientY; px=state.panX; py=state.panY;
+  $('#viewport').classList.add('drag'); stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener('pointermove', e=>{
+  if(!dragging) return;
+  state.panX = px + (e.clientX - sx);
+  state.panY = py + (e.clientY - sy);
+  applyTransform();
+});
+['pointerup','pointercancel'].forEach(ev=>stage.addEventListener(ev, e=>{
+  dragging=false; $('#viewport').classList.remove('drag');
+}));
+
+/* ---------- 初始化 ---------- */
+async function init(){
+  try{
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    $('#modelBadge').textContent = '模型: '+d.model;
+  }catch(e){ $('#modelBadge').textContent = '模型未知'; }
+}
+
+init();
+</script>
+</body>
+</html>

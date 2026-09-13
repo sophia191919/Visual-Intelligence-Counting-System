@@ -1,0 +1,13 @@
+train: D:/视觉计数系统/Vehicle-counting.v11-roboflow-instant-2--eval-.yolov8/train/images
+val: D:/视觉计数系统/Vehicle-counting.v11-roboflow-instant-2--eval-.yolov8/valid/images
+test: D:/视觉计数系统/Vehicle-counting.v11-roboflow-instant-2--eval-.yolov8/test/images
+
+nc: 5
+names: ['bicycle', 'bus', 'car', 'motorcycle', 'truck']
+
+roboflow:
+  workspace: vehiclecounting-id5od
+  project: vehicle-counting-t2uij
+  version: 11
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/vehiclecounting-id5od/vehicle-counting-t2uij/dataset/11
